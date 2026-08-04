@@ -10,7 +10,7 @@ Loosely inspired by [Usagebar](https://usagebar.com/) and the API approach in [c
 - **Popover** — 5-hour, weekly, Fable, context fill, today's messages/tokens
 - **Setup token auth** — paste the long-lived token from `claude setup-token` (Keychain)
 - **Local context** — reads latest `~/.claude/projects/**/*.jsonl` transcript
-- **Notifications** when you cross into low / very-low
+- **Desktop notifications** under 20% left (Almost hit) and under 5% left (Limit low) — allow when macOS prompts; test via ⋯ → **Test notification**
 
 ## Requirements
 
@@ -18,19 +18,29 @@ Loosely inspired by [Usagebar](https://usagebar.com/) and the API approach in [c
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (for `claude setup-token`)
 - Xcode CLT / Swift 5.9+
 
-## Build & run
+## Install (use forever)
+
+Build a real macOS app and put it in Applications:
 
 ```bash
-# Dev
-swift build
-.build/debug/TokenUsage &
-
-# App bundle
 ./scripts/build-app.sh
-open build/TokenUsage.app
+cp -R build/TokenUsage.app /Applications/
+open /Applications/TokenUsage.app
 ```
 
-First launch: click the **TU** menu item → run `claude setup-token` → paste the `sk-ant-oat01-…` token.
+Then:
+
+1. Click **TU** (or the %) in the menu bar → paste a token from `claude setup-token` (once; it’s stored in Keychain).
+2. Optional — open at login: **System Settings → General → Login Items → +** → pick TokenUsage.
+3. First open may need **right-click → Open** if Gatekeeper complains (unsigned/ad-hoc signed).
+
+After that it’s a normal menu-bar app: no Terminal, no `swift run`.
+
+### Dev only
+
+```bash
+swift run          # temporary binary under .build/
+```
 
 ## How it works
 

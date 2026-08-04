@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Combine
+import UserNotifications
 
 @main
 struct TokenUsageApp: App {
@@ -12,7 +13,7 @@ struct TokenUsageApp: App {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private var service = UsageService()
@@ -21,6 +22,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+
+        // Show banners even while the menu-bar app is "active".
+        if UsageService.notificationsSupported {
+            UNUserNotificationCenter.current().delegate = self
+            service.requestNotificationPermission()
+        }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = statusItem?.button {
@@ -53,6 +60,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.updateStatusButton()
             }
         }
+    }
+
+    // Present banners while the app is running (default is to suppress them).
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound, .list])
     }
 
     @objc private func togglePopover() {

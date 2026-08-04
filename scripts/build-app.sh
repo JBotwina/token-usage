@@ -9,13 +9,19 @@ BUILD_DIR="$ROOT/build"
 APP_DIR="$BUILD_DIR/$APP_NAME.app"
 CONTENTS="$APP_DIR/Contents"
 MACOS="$CONTENTS/MacOS"
+RESOURCES="$CONTENTS/Resources"
 
 echo "→ swift build -c release"
 swift build -c release
 
 BIN="$(swift build -c release --show-bin-path)/$APP_NAME"
-mkdir -p "$MACOS"
+rm -rf "$APP_DIR"
+mkdir -p "$MACOS" "$RESOURCES"
 cp "$BIN" "$MACOS/$APP_NAME"
+
+if [[ -f Assets/AppIcon.icns ]]; then
+  cp Assets/AppIcon.icns "$RESOURCES/AppIcon.icns"
+fi
 
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -29,13 +35,17 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key>
   <string>com.tokenusage.app</string>
   <key>CFBundleVersion</key>
-  <string>1.0.0</string>
+  <string>1.0.1</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.0.0</string>
+  <string>1.0.1</string>
   <key>CFBundleExecutable</key>
   <string>$APP_NAME</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
+  <key>CFBundleIconName</key>
+  <string>AppIcon</string>
   <key>LSMinimumSystemVersion</key>
   <string>14.0</string>
   <key>LSUIElement</key>

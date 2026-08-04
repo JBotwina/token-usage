@@ -24,6 +24,16 @@ final class UsageService: ObservableObject {
         if isConfigured {
             refreshContext()
             startPolling()
+            requestNotificationPermission()
+        }
+    }
+
+    /// Call once after install so macOS shows the notifications prompt.
+    func requestNotificationPermission() {
+        guard Self.notificationsAvailable else { return }
+        Task {
+            let center = UNUserNotificationCenter.current()
+            _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
         }
     }
 
@@ -44,10 +54,36 @@ final class UsageService: ObservableObject {
             _ = try await client.ping(token: token)
             try TokenStore.save(token)
             isConfigured = true
+            requestNotificationPermission()
             await refresh(forceFable: true)
             startPolling()
         } catch {
             setupError = error.localizedDescription
+        }
+    }
+
+    /// Fire a sample notification (⋯ menu) so the user can verify permissions.
+    func sendTestNotification() {
+        guard Self.notificationsAvailable else { return }
+        Task {
+            let center = UNUserNotificationCenter.current()
+            var status = await center.notificationSettings().authorizationStatus
+            if status == .notDetermined {
+                _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+                status = await center.notificationSettings().authorizationStatus
+            }
+            guard status == .authorized || status == .provisional else { return }
+
+            let content = UNMutableNotificationContent()
+            content.title = "TokenUsage"
+            content.body = "Notifications are working. You'll get an alert under 20% and 5% left."
+            content.sound = .default
+            let req = UNNotificationRequest(
+                identifier: "tokenusage-test-\(Date().timeIntervalSince1970)",
+                content: content,
+                trigger: nil
+            )
+            try? await center.add(req)
         }
     }
 
@@ -135,12 +171,14 @@ final class UsageService: ObservableObject {
 
     /// UNUserNotificationCenter requires a real .app bundle with an identifier.
     /// `swift run` / bare binary under `.build/` has none and will abort the process.
-    private static var notificationsAvailable: Bool {
+    static var notificationsSupported: Bool {
         guard let id = Bundle.main.bundleIdentifier, !id.isEmpty else { return false }
         let path = Bundle.main.bundlePath
         if path.contains("/.build/") || path.hasSuffix(".build") { return false }
         return path.hasSuffix(".app") || path.contains(".app/")
     }
+
+    private static var notificationsAvailable: Bool { notificationsSupported }
 
     private func maybeNotify(_ level: AlertLevel) {
         guard Self.notificationsAvailable else {
@@ -169,14 +207,20 @@ final class UsageService: ObservableObject {
 
         Task {
             let center = UNUserNotificationCenter.current()
-            let granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
-            guard granted else { return }
+            var status = await center.notificationSettings().authorizationStatus
+            if status == .notDetermined {
+                _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+                status = await center.notificationSettings().authorizationStatus
+            }
+            guard status == .authorized || status == .provisional else { return }
+
             let content = UNMutableNotificationContent()
             content.title = title
             content.body = body
             content.sound = .default
+            // Stable id per level so we replace rather than stack spam.
             let req = UNNotificationRequest(
-                identifier: "tokenusage-\(level.rawValue)-\(Date().timeIntervalSince1970)",
+                identifier: "tokenusage-\(level.rawValue)",
                 content: content,
                 trigger: nil
             )

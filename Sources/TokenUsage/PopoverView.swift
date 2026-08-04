@@ -328,6 +328,9 @@ struct UsagePanel: View {
             .disabled(service.isRefreshing)
 
             Menu {
+                Button("Test notification") {
+                    service.sendTestNotification()
+                }
                 Button("Replace token…") {
                     service.clearToken()
                 }
