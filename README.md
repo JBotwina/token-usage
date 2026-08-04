@@ -30,7 +30,7 @@ open /Applications/TokenUsage.app
 
 Then:
 
-1. Click **TU** (or the %) in the menu bar → paste a token from `claude setup-token` (once; it’s stored in Keychain).
+1. Click **TU** (or the %) in the menu bar → paste a token from `claude setup-token` (once; stored at `~/Library/Application Support/TokenUsage/token`, mode 0600).
 2. Optional — open at login: **System Settings → General → Login Items → +** → pick TokenUsage.
 3. First open may need **right-click → Open** if Gatekeeper complains (unsigned/ad-hoc signed).
 
@@ -51,7 +51,7 @@ swift run          # temporary binary under .build/
 | Context | Latest assistant `usage` in local Claude Code JSONL |
 | Today | Sum of assistant turns in today's transcripts |
 
-Token never leaves the machine except as `Authorization: Bearer` to Anthropic.
+Token never leaves the machine except as `Authorization: Bearer` to Anthropic. Reinstalls do not re-prompt — we intentionally avoid Keychain so ad-hoc re-signing does not trigger macOS password dialogs.
 
 ## Thresholds
 

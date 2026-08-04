@@ -105,7 +105,7 @@ struct SetupView: View {
             .buttonStyle(.plain)
             .disabled(token.filter { !$0.isWhitespace }.isEmpty || service.isRefreshing)
 
-            Text("Token stays in your Keychain. Never leaves this Mac except to call Anthropic.")
+            Text("Token stays on this Mac only (Application Support). Used solely to call Anthropic.")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.muted)
         }
