@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import Combine
 import UserNotifications
+import Carbon
 
 @main
 struct TokenUsageApp: App {
@@ -19,11 +20,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var service = UsageService()
     private var eventMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
+    private var hotKey: HotKey?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
-        // Show banners even while the menu-bar app is "active".
         if UsageService.notificationsSupported {
             UNUserNotificationCenter.current().delegate = self
             service.requestNotificationPermission()
@@ -60,9 +61,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 self?.updateStatusButton()
             }
         }
+
+        // ⌥E — works system-wide while the menu bar app is running.
+        hotKey = HotKey(keyCode: kVK_ANSI_E, modifiers: optionKey) { [weak self] in
+            self?.togglePopover()
+        }
+
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(togglePopover),
+            name: Notification.Name("com.tokenusage.app.toggle"),
+            object: nil
+        )
     }
 
-    // Present banners while the app is running (default is to suppress them).
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls where url.scheme?.lowercased() == "tokenusage" {
+            // tokenusage://toggle  |  tokenusage://show
+            let action = (url.host ?? url.path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))).lowercased()
+            if action == "toggle" || action.isEmpty {
+                togglePopover()
+            } else if action == "show" {
+                showPopover()
+            }
+        }
+    }
+
     nonisolated func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         willPresent notification: UNNotification,
@@ -71,25 +95,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         completionHandler([.banner, .sound, .list])
     }
 
-    @objc private func togglePopover() {
-        guard let button = statusItem?.button, let popover else { return }
+    @objc func togglePopover() {
+        guard let popover else { return }
         if popover.isShown {
-            popover.performClose(nil)
-            removeMonitor()
+            closePopover()
         } else {
-            Task { await service.refresh(forceFable: false) }
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            if let view = popover.contentViewController?.view {
-                let fitting = view.fittingSize
-                popover.contentSize = NSSize(width: 340, height: max(300, min(600, fitting.height)))
-            }
-            eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-                Task { @MainActor in
-                    self?.popover?.performClose(nil)
-                    self?.removeMonitor()
-                }
+            showPopover()
+        }
+    }
+
+    private func showPopover() {
+        guard let button = statusItem?.button, let popover else { return }
+        if popover.isShown { return }
+
+        Task { await service.refresh(forceFable: false) }
+        // Activate so the popover receives key events / stays above.
+        NSApp.activate(ignoringOtherApps: true)
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        if let view = popover.contentViewController?.view {
+            let fitting = view.fittingSize
+            popover.contentSize = NSSize(width: 340, height: max(300, min(600, fitting.height)))
+        }
+        removeMonitor()
+        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            Task { @MainActor in
+                self?.closePopover()
             }
         }
+    }
+
+    private func closePopover() {
+        popover?.performClose(nil)
+        removeMonitor()
     }
 
     private func removeMonitor() {
@@ -110,7 +147,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                     .foregroundColor: NSColor.labelColor
                 ]
             )
-            button.toolTip = "TokenUsage — paste a setup token"
+            button.toolTip = "TokenUsage — ⌥E to open"
             return
         }
 
@@ -125,12 +162,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             text = "…"
         }
 
-        // Bold monospaced digits so the menu bar stays readable at a glance.
         button.attributedTitle = NSAttributedString(string: text, attributes: [
             .font: NSFont.monospacedDigitSystemFont(ofSize: 14, weight: .bold),
             .foregroundColor: level.menuBarColor
         ])
-        button.toolTip = tooltip()
+        button.toolTip = tooltip() + " · ⌥E"
     }
 
     private func tooltip() -> String {

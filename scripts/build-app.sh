@@ -35,9 +35,9 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key>
   <string>com.tokenusage.app</string>
   <key>CFBundleVersion</key>
-  <string>1.0.1</string>
+  <string>1.0.2</string>
   <key>CFBundleShortVersionString</key>
-  <string>1.0.1</string>
+  <string>1.0.2</string>
   <key>CFBundleExecutable</key>
   <string>$APP_NAME</string>
   <key>CFBundlePackageType</key>
@@ -52,6 +52,17 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <true/>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>com.tokenusage.app</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>tokenusage</string>
+      </array>
+    </dict>
+  </array>
 </dict>
 </plist>
 PLIST

@@ -36,6 +36,17 @@ Then:
 
 After that it’s a normal menu-bar app: no Terminal, no `swift run`.
 
+### Hotkey & Raycast
+
+- **⌥E** (Option-E) toggles the popover system-wide while the app is running.
+- **Raycast:** add `scripts/raycast-token-usage.sh` as a Script Command, or run:
+
+  ```bash
+  open "tokenusage://toggle"
+  ```
+
+  Bind that command to any Raycast hotkey you like.
+
 ### Dev only
 
 ```bash
