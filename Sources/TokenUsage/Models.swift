@@ -28,9 +28,21 @@ enum AlertLevel: String, CaseIterable, Identifiable {
 
     var accent: Color {
         switch self {
-        case .normal: return Color(red: 0.35, green: 0.62, blue: 0.42)   // soft green
-        case .low: return Color(red: 0.85, green: 0.58, blue: 0.25)      // amber
-        case .veryLow: return Color(red: 0.72, green: 0.32, blue: 0.22)  // terracotta
+        case .normal:  // soft green
+            return Theme.dynamic(
+                light: NSColor(srgbRed: 0.35, green: 0.62, blue: 0.42, alpha: 1),
+                dark: NSColor(srgbRed: 0.45, green: 0.78, blue: 0.55, alpha: 1)
+            )
+        case .low:     // amber
+            return Theme.dynamic(
+                light: NSColor(srgbRed: 0.85, green: 0.58, blue: 0.25, alpha: 1),
+                dark: NSColor(srgbRed: 0.95, green: 0.71, blue: 0.36, alpha: 1)
+            )
+        case .veryLow: // terracotta
+            return Theme.dynamic(
+                light: NSColor(srgbRed: 0.72, green: 0.32, blue: 0.22, alpha: 1),
+                dark: NSColor(srgbRed: 0.91, green: 0.45, blue: 0.35, alpha: 1)
+            )
         }
     }
 
@@ -84,58 +96,22 @@ struct RateWindow: Equatable {
     }
 }
 
-// MARK: - Session context (local Claude Code transcript)
-
-struct SessionContext: Equatable {
-    var usedTokens: Int
-    var usableTokens: Int
-    var model: String?
-    var updatedAt: Date
-
-    var remainingTokens: Int { max(0, usableTokens - usedTokens) }
-    var usedPercent: Double {
-        guard usableTokens > 0 else { return 0 }
-        return min(100, Double(usedTokens) / Double(usableTokens) * 100)
-    }
-    var remainingPercent: Double { max(0, 100 - usedPercent) }
-    var level: AlertLevel { .from(remainingPercent: remainingPercent) }
-
-    var usedLabel: String { Self.compact(usedTokens) }
-    /// Primary readout: remaining % of this conversation's token budget.
-    var remainingPercentLabel: String { "\(Int(remainingPercent.rounded()))% left" }
-    var remainingTokensLabel: String { Self.compact(remainingTokens) + " tokens" }
-    var usableLabel: String { Self.compact(usableTokens) }
-
-    private static func compact(_ n: Int) -> String {
-        if n >= 1_000_000 {
-            return String(format: "%.1fM", Double(n) / 1_000_000)
-        }
-        if n >= 1_000 {
-            let k = Double(n) / 1_000
-            return k >= 100 ? String(format: "%.0fK", k) : String(format: "%.1fK", k).replacingOccurrences(of: ".0K", with: "K")
-        }
-        return "\(n)"
-    }
-}
-
 // MARK: - Aggregate snapshot
 
 struct UsageSnapshot: Equatable {
     var session: RateWindow?
     var weekly: RateWindow?
     var fable: RateWindow?
-    var context: SessionContext?
     var plan: String?
     var organizationId: String?
     var lastPolled: Date?
     var error: String?
 
-    /// Tightest remaining % across rate windows (and context if present).
+    /// Tightest remaining % across rate windows.
     var primaryRemaining: Double? {
         var rem: [Double] = []
         if let s = session { rem.append(s.remainingPercent) }
         if let w = weekly { rem.append(w.remainingPercent) }
-        if let c = context { rem.append(c.remainingPercent) }
         return rem.min()
     }
 
@@ -149,6 +125,50 @@ struct UsageSnapshot: Equatable {
         if let s = session { return Int(s.remainingPercent.rounded()) }
         if let w = weekly { return Int(w.remainingPercent.rounded()) }
         return nil
+    }
+}
+
+// MARK: - ElevenLabs credits
+
+/// ElevenLabs bills characters, not tokens, and refills on a monthly boundary.
+struct ElevenLabsSnapshot: Equatable {
+    var tier: String?
+    var used: Int = 0
+    var limit: Int = 0
+    var resetAt: Date?
+    var lastPolled: Date?
+    var error: String?
+
+    var remaining: Int { max(0, limit - used) }
+
+    var usedPercent: Double {
+        guard limit > 0 else { return 0 }
+        return min(100, max(0, Double(used) / Double(limit) * 100))
+    }
+
+    var remainingPercent: Double { 100 - usedPercent }
+
+    var level: AlertLevel { .from(remainingPercent: remainingPercent) }
+
+    var remainingLabel: String { "\(Self.compact(remaining)) left" }
+
+    var usageLabel: String { "\(Self.compact(used)) / \(Self.compact(limit))" }
+
+    var resetRelative: String {
+        guard let resetAt else { return "—" }
+        let interval = resetAt.timeIntervalSinceNow
+        if interval <= 0 { return "soon" }
+        let days = Int(interval) / 86_400
+        let hours = (Int(interval) % 86_400) / 3600
+        if days > 0 { return hours > 0 ? "\(days)d \(hours)h" : "\(days)d" }
+        let minutes = (Int(interval) % 3600) / 60
+        return hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
+    }
+
+    static func compact(_ n: Int) -> String {
+        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
+        if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }
+        return "\(n)"
     }
 }
 

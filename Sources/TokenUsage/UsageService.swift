@@ -1,7 +1,7 @@
 import Foundation
 import UserNotifications
 
-/// Owns poll state. Session/weekly every `pollInterval`, Fable slower, context often.
+/// Owns poll state. Session/weekly every `pollInterval`, Fable slower, today often.
 @MainActor
 final class UsageService: ObservableObject {
     @Published private(set) var snapshot = UsageSnapshot()
@@ -17,12 +17,12 @@ final class UsageService: ObservableObject {
 
     private let pollInterval: TimeInterval = 120          // 2 min
     private let fableInterval: TimeInterval = 20 * 60     // 20 min
-    private let contextInterval: TimeInterval = 15        // 15 s
+    private let todayInterval: TimeInterval = 15          // 15 s
 
     init() {
         self.isConfigured = TokenStore.hasToken
         if isConfigured {
-            refreshContext()
+            refreshToday()
             startPolling()
             requestNotificationPermission()
         }
@@ -105,12 +105,12 @@ final class UsageService: ObservableObject {
             // Immediate full refresh
             await self?.refresh(forceFable: true)
             while !Task.isCancelled {
-                // Context is cheap — tick often between full polls
-                let ticks = max(1, Int((self?.pollInterval ?? 120) / (self?.contextInterval ?? 15)))
+                // Transcript scanning is cheap — tick often between full polls
+                let ticks = max(1, Int((self?.pollInterval ?? 120) / (self?.todayInterval ?? 15)))
                 for _ in 0..<ticks {
-                    try? await Task.sleep(nanoseconds: UInt64((self?.contextInterval ?? 15) * 1_000_000_000))
+                    try? await Task.sleep(nanoseconds: UInt64((self?.todayInterval ?? 15) * 1_000_000_000))
                     guard !Task.isCancelled else { return }
-                    await MainActor.run { self?.refreshContext() }
+                    await MainActor.run { self?.refreshToday() }
                 }
                 await self?.refresh(forceFable: false)
             }
@@ -150,7 +150,7 @@ final class UsageService: ObservableObject {
             }
 
             snapshot = next
-            refreshContext()
+            refreshToday()
             maybeNotify(next.primaryLevel)
         } catch {
             snapshot.error = error.localizedDescription
@@ -160,10 +160,7 @@ final class UsageService: ObservableObject {
         }
     }
 
-    func refreshContext() {
-        if let ctx = ContextReader.latestContext() {
-            snapshot.context = ctx
-        }
+    func refreshToday() {
         today = ContextReader.todayStats()
     }
 

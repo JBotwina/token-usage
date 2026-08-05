@@ -1,6 +1,63 @@
 import Foundation
 import Security
 
+/// Secrets live as individual files under Application Support, mode 0600.
+enum SecretStore {
+    private static var memory: [String: String] = [:]
+
+    static var supportDir: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
+        return base.appendingPathComponent("TokenUsage", isDirectory: true)
+    }
+
+    static func url(_ fileName: String) -> URL {
+        supportDir.appendingPathComponent(fileName)
+    }
+
+    static func save(_ value: String, as fileName: String) throws {
+        let cleaned = value.filter { !$0.isWhitespace }
+        guard !cleaned.isEmpty else { throw TokenStoreError.empty }
+
+        try FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
+        try cleaned.write(to: url(fileName), atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: url(fileName).path
+        )
+        memory[fileName] = cleaned
+    }
+
+    static func load(_ fileName: String) -> String? {
+        if let cached = memory[fileName], !cached.isEmpty { return cached }
+        let path = url(fileName)
+        guard FileManager.default.fileExists(atPath: path.path),
+              let raw = try? String(contentsOf: path, encoding: .utf8) else {
+            return nil
+        }
+        let cleaned = raw.filter { !$0.isWhitespace }
+        guard !cleaned.isEmpty else { return nil }
+        memory[fileName] = cleaned
+        return cleaned
+    }
+
+    static func delete(_ fileName: String) {
+        memory[fileName] = nil
+        try? FileManager.default.removeItem(at: url(fileName))
+    }
+}
+
+/// Persists the ElevenLabs API key (`sk_…`). Needs the `user_read` permission
+/// on the key itself or `/v1/user/subscription` answers 401.
+enum ElevenLabsKeyStore {
+    private static let fileName = "elevenlabs-key"
+
+    static func save(_ key: String) throws { try SecretStore.save(key, as: fileName) }
+    static func load() -> String? { SecretStore.load(fileName) }
+    static func delete() { SecretStore.delete(fileName) }
+    static var hasKey: Bool { load() != nil }
+}
+
 /// Persists the long-lived Claude OAuth token (`sk-ant-oat01-…`).
 ///
 /// Stored under Application Support with mode 0600 — not Keychain.
@@ -12,69 +69,30 @@ enum TokenStore {
     private static let keychainAccount = "setup-token"
     private static let fileName = "token"
 
-    private static var memory: String?
-
-    private static var supportDir: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
-        return base.appendingPathComponent("TokenUsage", isDirectory: true)
-    }
-
-    private static var tokenURL: URL {
-        supportDir.appendingPathComponent(fileName)
-    }
-
     static func save(_ token: String) throws {
-        let cleaned = token.filter { !$0.isWhitespace }
-        guard !cleaned.isEmpty else { throw TokenStoreError.empty }
-
-        try FileManager.default.createDirectory(at: supportDir, withIntermediateDirectories: true)
-        try cleaned.write(to: tokenURL, atomically: true, encoding: .utf8)
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o600],
-            ofItemAtPath: tokenURL.path
-        )
-        memory = cleaned
-
+        try SecretStore.save(token, as: fileName)
         // Drop any legacy Keychain copy so old prompts never return.
         deleteKeychainLegacy()
     }
 
     static func load() -> String? {
-        if let memory, !memory.isEmpty { return memory }
-
-        if let fromFile = readFile(), !fromFile.isEmpty {
-            memory = fromFile
-            return fromFile
-        }
+        if let fromFile = SecretStore.load(fileName) { return fromFile }
 
         // One-shot migration from older Keychain-backed installs.
         if let fromKeychain = loadKeychainLegacy(), !fromKeychain.isEmpty {
             try? save(fromKeychain) // also wipes Keychain
-            return memory
+            return SecretStore.load(fileName)
         }
 
         return nil
     }
 
     static func delete() {
-        memory = nil
-        try? FileManager.default.removeItem(at: tokenURL)
+        SecretStore.delete(fileName)
         deleteKeychainLegacy()
     }
 
     static var hasToken: Bool { load() != nil }
-
-    // MARK: - File
-
-    private static func readFile() -> String? {
-        guard FileManager.default.fileExists(atPath: tokenURL.path),
-              let raw = try? String(contentsOf: tokenURL, encoding: .utf8) else {
-            return nil
-        }
-        let cleaned = raw.filter { !$0.isWhitespace }
-        return cleaned.isEmpty ? nil : cleaned
-    }
 
     // MARK: - Legacy Keychain (read once, then remove)
 

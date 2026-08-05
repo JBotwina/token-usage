@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private var service = UsageService()
+    private var eleven = ElevenLabsService()
     private var eventMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
     private var hotKey: HotKey?
@@ -42,7 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         pop.animates = true
         pop.contentSize = NSSize(width: 340, height: 480)
         pop.contentViewController = NSHostingController(
-            rootView: PopoverView(service: service, onQuit: { [weak self] in
+            rootView: PopoverView(service: service, eleven: eleven, onQuit: { [weak self] in
                 self?.popover?.performClose(nil)
                 NSApp.terminate(nil)
             })
@@ -109,6 +110,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if popover.isShown { return }
 
         Task { await service.refresh(forceFable: false) }
+        if eleven.isConfigured {
+            Task { await eleven.refresh() }
+        }
         // Activate so the popover receives key events / stays above.
         NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
@@ -179,9 +183,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         if let f = service.snapshot.fable {
             parts.append("Fable: \(f.remainingLabel)")
-        }
-        if let c = service.snapshot.context {
-            parts.append("This chat: \(c.remainingPercentLabel)")
         }
         return parts.isEmpty ? "TokenUsage" : parts.joined(separator: " · ")
     }

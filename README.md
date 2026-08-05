@@ -1,16 +1,17 @@
 # TokenUsage
 
-macOS menu bar app that tracks **Claude Code** usage — 5-hour window, weekly limit, Fable allocation, and live session context — so you don't hit the wall mid-task.
+macOS menu bar app that tracks **Claude Code** usage — 5-hour window, weekly limit, and Fable allocation — so you don't hit the wall mid-task.
 
 Loosely inspired by [Usagebar](https://usagebar.com/) and the API approach in [claude-monitor](https://github.com/rjwalters/claude-monitor).
 
 ## Features
 
 - **Menu bar % remaining** — orange under 20% left, red under 5%
-- **Popover** — 5-hour, weekly, Fable, context fill, today's messages/tokens
+- **Popover** — 5-hour, weekly, Fable, today's messages/tokens
 - **Setup token auth** — paste the long-lived token from `claude setup-token` (Keychain)
-- **Local context** — reads latest `~/.claude/projects/**/*.jsonl` transcript
+- **Today's totals** — scans `~/.claude/projects/**/*.jsonl` transcripts across all sessions
 - **Desktop notifications** under 20% left (Almost hit) and under 5% left (Limit low) — allow when macOS prompts; test via ⋯ → **Test notification**
+- **ElevenLabs tab** — monthly character credits from the same popover (Claude is the default tab)
 
 ## Requirements
 
@@ -61,6 +62,15 @@ swift run          # temporary binary under .build/
 | Fable | Probe `claude-fable-5` → `anthropic-ratelimit-unified-7d_oi-*` headers |
 | Context | Latest assistant `usage` in local Claude Code JSONL |
 | Today | Sum of assistant turns in today's transcripts |
+| ElevenLabs credits | `GET /v1/user/subscription` → `character_count` / `character_limit` |
+
+### ElevenLabs
+
+Paste an API key in the **ElevenLabs** tab. The key must have the **User: Read**
+(`user_read`) permission — enable it at elevenlabs.io → Profile → API Keys → edit
+key. Without it the endpoint answers 401 `missing_permissions`. Stored at
+`~/Library/Application Support/TokenUsage/elevenlabs-key`, mode 0600. Polls every
+5 minutes; credits are characters and reset monthly.
 
 Token never leaves the machine except as `Authorization: Bearer` to Anthropic. Reinstalls do not re-prompt — we intentionally avoid Keychain so ad-hoc re-signing does not trigger macOS password dialogs.
 

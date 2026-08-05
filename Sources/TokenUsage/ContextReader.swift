@@ -1,19 +1,12 @@
 import Foundation
 
-/// Reads the most recently active Claude Code session transcript under
-/// `~/.claude/projects/` and estimates context fill from the latest assistant
-/// usage block: `input + cache_creation + cache_read`.
+/// Aggregates today's message and token counts across all Claude Code session
+/// transcripts under `~/.claude/projects/`.
 enum ContextReader {
-    private static let defaultUsable = 200_000
     private static let projectsDir: URL = {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects")
     }()
-
-    static func latestContext() -> SessionContext? {
-        guard let file = mostRecentTranscript() else { return nil }
-        return parseContext(from: file)
-    }
 
     static func todayStats() -> TodayStats {
         let cal = Calendar.current
@@ -42,24 +35,13 @@ enum ContextReader {
                 // Only count if timestamp is today
                 if let ts = extractTimestamp(from: String(line)), ts < start { continue }
                 messages += 1
-                tokens += usage.total
+                tokens += usage
             }
         }
         return TodayStats(messages: messages, tokens: tokens)
     }
 
     // MARK: - Internals
-
-    private static func mostRecentTranscript() -> URL? {
-        allTranscripts()
-            .compactMap { url -> (URL, Date)? in
-                guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
-                      let mod = attrs[.modificationDate] as? Date else { return nil }
-                return (url, mod)
-            }
-            .max(by: { $0.1 < $1.1 })?
-            .0
-    }
 
     private static func allTranscripts() -> [URL] {
         let fm = FileManager.default
@@ -71,7 +53,7 @@ enum ContextReader {
 
         var urls: [URL] = []
         for case let url as URL in enumerator {
-            // Skip subagent transcripts — parent session is the context that matters
+            // Skip subagent transcripts — their usage is already billed to the parent
             if url.path.contains("/subagents/") { continue }
             if url.pathExtension == "jsonl" {
                 urls.append(url)
@@ -80,42 +62,7 @@ enum ContextReader {
         return urls
     }
 
-    private static func parseContext(from file: URL) -> SessionContext? {
-        guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
-        defer { try? handle.close() }
-
-        let size = (try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
-        // Read last ~512KB — enough to cover recent turns
-        if size > 512_000 {
-            try? handle.seek(toOffset: UInt64(size - 512_000))
-        }
-        guard let data = try? handle.readToEnd(),
-              let text = String(data: data, encoding: .utf8) else { return nil }
-
-        var lastUsage: (total: Int, model: String?)?
-        var lastTs = Date.distantPast
-
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true).reversed() {
-            let s = String(line)
-            guard s.contains("\"type\":\"assistant\"") else { continue }
-            guard let usage = extractUsage(from: s) else { continue }
-            let ts = extractTimestamp(from: s) ?? Date.distantPast
-            lastUsage = usage
-            lastTs = ts
-            break
-        }
-
-        guard let lastUsage else { return nil }
-        let usable = defaultUsable
-        return SessionContext(
-            usedTokens: lastUsage.total,
-            usableTokens: usable,
-            model: lastUsage.model,
-            updatedAt: lastTs == Date.distantPast ? Date() : lastTs
-        )
-    }
-
-    private static func extractUsage(from line: String) -> (total: Int, model: String?)? {
+    private static func extractUsage(from line: String) -> Int? {
         // Fast path: locate "usage":{...} via JSONSerialization on the whole line
         guard let data = line.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -128,12 +75,8 @@ enum ContextReader {
         let input = usage["input_tokens"] as? Int ?? 0
         let cacheCreate = usage["cache_creation_input_tokens"] as? Int ?? 0
         let cacheRead = usage["cache_read_input_tokens"] as? Int ?? 0
-        // Context fill ≈ everything that sits in the prompt window
         let total = input + cacheCreate + cacheRead
-        guard total > 0 else { return nil }
-
-        let model = message?["model"] as? String
-        return (total, model)
+        return total > 0 ? total : nil
     }
 
     private static func extractTimestamp(from line: String) -> Date? {
